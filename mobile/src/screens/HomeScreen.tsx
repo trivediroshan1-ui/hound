@@ -1773,7 +1773,9 @@ export function HomeScreen({
                 <TileValue
                   value={weeklyRecap.stepsLastWeek !== null ? weeklyRecap.stepsLastWeek.toLocaleString() : '—'}
                   lines={[
-                    `steps${recapPct !== null ? ` · ${recapPct >= 0 ? '▲' : '▼'} ${Math.abs(recapPct)}%` : ''}`,
+                    // Last week's total against the week before (weeklyRecap.ts),
+                    // said plainly so it isn't read as this week so far.
+                    `steps last week${recapPct !== null ? ` · ${recapPct >= 0 ? '▲' : '▼'} ${Math.abs(recapPct)}%` : ''}`,
                     `${weeklyRecap.challengesFinished} ${weeklyRecap.challengesFinished === 1 ? 'challenge' : 'challenges'} finished`,
                   ]}
                 />
