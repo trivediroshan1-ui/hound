@@ -140,9 +140,11 @@ export function TicTacGoCard({
     let cancelled = false;
     const used = new Set(myUsedWorkouts);
     setLoadingActivity(true);
+    // Sample data can't claim a square.
+    const sample = health.platform === 'mock';
     Promise.all([
-      health.getStepsSince(stepsSince).catch(() => 0),
-      health.getRecentWorkouts(50).catch(() => []),
+      sample ? Promise.resolve(0) : health.getStepsSince(stepsSince).catch(() => 0),
+      sample ? Promise.resolve([]) : health.getRecentWorkouts(50).catch(() => []),
     ])
       .then(([steps, workouts]) => {
         if (!cancelled) {

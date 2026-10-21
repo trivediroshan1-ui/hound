@@ -1015,7 +1015,8 @@ export function HomeScreen({
       // Today's total feeds everyone's Hound-users rank, which the Data
       // tab shows (0027_daily_step_totals.sql).
       // Then your rank among everyone today, for the step rank tile.
-      recordDailyStepTotal(user.id, s.stepsToday)
+      // Sample data stays on this phone: it isn't anyone's real steps.
+      (health.platform === 'mock' ? Promise.resolve() : recordDailyStepTotal(user.id, s.stepsToday))
         .catch(() => {
           // Same "never break the screen" convention as the rest of
           // Home's own fetches.
@@ -1028,7 +1029,8 @@ export function HomeScreen({
     // the same window the Data tab's readiness card uses.
     health.getRecentWorkouts(50).then((w) => {
       setWorkouts(w);
-      if (isSupabaseConfigured && user?.id) {
+      // Sample workouts stay on this phone.
+      if (isSupabaseConfigured && user?.id && health.platform !== 'mock') {
         recordWorkoutHistory(user.id, w).catch(() => {
           // Same "never break the screen" convention as the rest of
           // Home's own fetches.

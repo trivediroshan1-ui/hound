@@ -218,6 +218,8 @@ export async function syncPersonalRecords(
 ): Promise<NewRecord[]> {
   try {
     if (!supabase) return [];
+    // Sample data isn't real activity, so it never sets a record.
+    if (health.platform === 'mock') return [];
     if (!force) {
       const last = Number(await AsyncStorage.getItem(lastSyncKey(userId)).catch(() => null));
       if (last && Date.now() - last < SYNC_EVERY_MS) return [];
