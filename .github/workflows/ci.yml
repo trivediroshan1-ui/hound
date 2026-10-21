@@ -8,6 +8,10 @@ on:
     branches: [master]
   workflow_dispatch:
 
+# Every job only reads the code. A job that needs more asks for it itself.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -68,6 +72,9 @@ jobs:
     name: Deploy to staging
     needs: [app, functions, site, database]
     if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    # Its secrets can live in the "staging" environment (Settings >
+    # Environments), limited to master, so no other branch can read them.
+    environment: staging
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-staging
@@ -87,9 +94,11 @@ jobs:
             echo "::error::Add SUPABASE_ACCESS_TOKEN and STAGING_DB_PASSWORD under Settings > Secrets and variables > Actions. See mobile/supabase/STAGING.md."
             exit 1
           fi
+      # A fixed version, so a new CLI release can't change how staging is
+      # deployed without a PR. Raise it on purpose.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.120.0
       - run: supabase link --project-ref "$STAGING_PROJECT_REF"
       - name: Apply new migrations
         run: supabase db push --include-all
