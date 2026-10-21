@@ -2,6 +2,7 @@ import type { Session } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '../lib/supabase';
+import { isMissingFunction } from '../lib/rpcFallback';
 import { signInWithGoogleNative, signOutGoogleNative } from './googleSignIn';
 import { initialsFor } from './initials';
 import { forgetThisDevice } from '../notifications/pushToken';
@@ -17,6 +18,17 @@ function requireClient() {
   return supabase;
 }
 
+// Your own admin flag. is_platform_admin() (0120) where it exists, else
+// the column itself, which still works until 0121 hides it.
+async function readIsAdmin(userId: string): Promise<boolean> {
+  const client = requireClient();
+  const { data, error } = await client.rpc('is_platform_admin');
+  if (!error) return data === true;
+  if (!isMissingFunction(error)) return false;
+  const { data: row } = await client.from('profiles').select('is_admin').eq('id', userId).maybeSingle();
+  return row?.is_admin === true;
+}
+
 // `profiles` is populated by a DB trigger on signup (see
 // supabase/migrations/0001_challenges_schema.sql), so this is the one
 // place that turns "a Supabase auth user" into the AuthUser shape the rest
@@ -24,13 +36,18 @@ function requireClient() {
 export async function userFromSession(session: Session, provider: AuthProviderId = 'email'): Promise<AuthUser> {
   const client = requireClient();
   const fallbackEmail = session.user.email ?? '';
-  const { data } = await client
-    .from('profiles')
-    // Not email: other people's addresses aren't readable
-    // (0092_hide_private_profile_columns.sql), and yours is in the session.
-    .select('name, initials, is_admin, username, use_username, organization_id, org_role')
-    .eq('id', session.user.id)
-    .single();
+  const [{ data }, isAdmin] = await Promise.all([
+    client
+      .from('profiles')
+      // Not email: other people's addresses aren't readable
+      // (0092_hide_private_profile_columns.sql), and yours is in the session.
+      // Not is_admin either: that comes from is_platform_admin() below
+      // (0120, hidden from members by 0121).
+      .select('name, initials, username, use_username, organization_id, org_role')
+      .eq('id', session.user.id)
+      .single(),
+    readIsAdmin(session.user.id),
+  ]);
   if (!data) {
     // The trigger runs in the same transaction as the auth.users insert,
     // so this really only happens if it hasn't landed yet (rare, but
@@ -45,7 +62,7 @@ export async function userFromSession(session: Session, provider: AuthProviderId
     email: fallbackEmail,
     initials: data.initials,
     provider,
-    isAdmin: data.is_admin ?? false,
+    isAdmin,
     username: data.username,
     useUsername: data.use_username ?? false,
     organizationId: data.organization_id,

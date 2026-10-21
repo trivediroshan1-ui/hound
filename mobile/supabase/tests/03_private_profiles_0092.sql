@@ -13,7 +13,7 @@ select tests.sign_in(:'bob');
 set local role authenticated;
 select throws_ok('select email from public.profiles', '42501', null, 'H1: email is not readable');
 select throws_ok('select friend_code from public.profiles', '42501', null, 'H1: friend codes are not readable');
-select lives_ok('select id, name, initials, username, is_admin from public.profiles', 'Other profile columns still are');
+select lives_ok('select id, name, initials, username from public.profiles', 'Other profile columns still are (is_admin is hidden by 0121)');
 select is(public.my_friend_code(), :'bob_code',
   'my_friend_code() returns your own code');
 select is(public.profile_id_for_email(upper(:'cat_email')), :'cat'::uuid,
