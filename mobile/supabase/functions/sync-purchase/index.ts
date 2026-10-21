@@ -25,8 +25,12 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
+// Only Hound's own website may call this from a browser. The app is not a
+// browser, so it is unaffected. For local web testing, set the
+// HOUND_WEB_ORIGIN secret (for example http://localhost:8081) on staging.
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': Deno.env.get('HOUND_WEB_ORIGIN') ?? 'https://houndchallenge.net',
+  Vary: 'Origin',
   'Access-Control-Allow-Headers': 'authorization, content-type',
 };
 
