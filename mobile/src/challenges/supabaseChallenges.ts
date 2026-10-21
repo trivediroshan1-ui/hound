@@ -1,4 +1,5 @@
 import { supabase, signedInUserId } from '../lib/supabase';
+import { isMissingFunction } from '../lib/rpcFallback';
 import { levelForXp } from './ranks';
 import { displayInitials, displayName, type DisplayableProfile } from '../profiles/displayName';
 import { fetchAll } from '../lib/fetchAll';
@@ -596,6 +597,17 @@ export const supabaseChallengesProvider: ChallengesProvider = {
       .eq('challenge_id', challengeId)
       .eq('user_id', userId);
     if (error) throw new Error(error.message);
+  },
+
+  async applyHuntCatches(challengeId: string): Promise<number | null> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('hunt_apply_catches', { p_challenge_id: challengeId });
+    if (error) {
+      // The function isn't there yet (0119 hasn't run).
+      if (isMissingFunction(error)) return null;
+      throw new Error(error.message);
+    }
+    return typeof data === 'number' ? data : 0;
   },
 };
 

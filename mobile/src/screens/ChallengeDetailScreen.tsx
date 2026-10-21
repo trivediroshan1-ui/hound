@@ -625,18 +625,19 @@ export function ChallengeDetailScreen({
     load();
   }, [load]);
 
-  // Notices "I've just been caught" and persists it — see
-  // ChallengesProvider.markCaught and withHuntCatches for why this is the
-  // caught person's own client doing the writing (only their own
-  // participant row is theirs to update) rather than the Hunter's. Runs
-  // on every load, not just the first — harmless, since it only ever
-  // acts while this user's own stored role is still 'hunted'; once
-  // markCaught lands and load() re-fetches, `mine.role` is 'zombie' and
-  // this becomes a no-op.
+  // Notices a catch on this board that isn't stored yet and has the
+  // server record it (hunt_apply_catches, 0119_hunt_catches_on_server.sql),
+  // which checks the numbers itself and never trusts this screen. Anyone in
+  // the chase can trigger it, so a catch no longer waits for the caught
+  // person to open the app. Before 0119 has run, a caught Hunted person
+  // writes their own catch as before (ChallengesProvider.markCaught).
+  // Runs on every load; once the catch is stored and load() re-fetches,
+  // nobody's stored role is 'hunted' while the board says 'zombie', so
+  // this goes quiet.
   useEffect(() => {
     if (!challenge || challenge.kind !== 'hunt' || !user?.id) return;
     const mine = participants.find((p) => p.userId === user.id);
-    if (mine?.role !== 'hunted') return;
+    if (mine?.role !== 'hunted' && mine?.role !== 'hunter') return;
     const sortBy = boardSortFor(challenge);
     const rawBoard = buildBoard(
       participants,
@@ -647,10 +648,22 @@ export function ChallengeDetailScreen({
       challenge,
       headStartLeaderboard,
     );
-    const caught = withHuntCatches(rawBoard, sortBy, challenge).find((r) => r.userId === user.id);
-    if (caught?.role === 'zombie') {
-      supabaseChallengesProvider.markCaught(challenge.id).then(load).catch(() => {});
-    }
+    const stillHunted = new Set(participants.filter((p) => p.role === 'hunted').map((p) => p.userId));
+    const newlyCaught = withHuntCatches(rawBoard, sortBy, challenge).filter(
+      (r) => r.role === 'zombie' && stillHunted.has(r.userId),
+    );
+    if (newlyCaught.length === 0) return;
+    const meCaught = newlyCaught.some((r) => r.userId === user.id);
+    supabaseChallengesProvider
+      .applyHuntCatches(challenge.id)
+      .then((recorded) => {
+        if (recorded !== null) return recorded;
+        return meCaught ? supabaseChallengesProvider.markCaught(challenge.id).then(() => 1) : 0;
+      })
+      .then((recorded) => {
+        if (recorded > 0) load();
+      })
+      .catch(() => {});
   }, [challenge, participants, leaderboard, bots, headStartLeaderboard, user?.id, load]);
 
   // Notices "I've closed the gap" while IT — mirrors the hunt

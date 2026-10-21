@@ -283,4 +283,9 @@ export interface ChallengesProvider {
   // catch anyone but themselves through this call — the client only ever
   // calls it for its own signed-in user.
   markCaught(challengeId: string): Promise<void>;
+  // Asks the server to record every catch in a hunt
+  // (0119_hunt_catches_on_server.sql), so a catch no longer depends on the
+  // caught person opening the app. Resolves to how many it recorded, or
+  // null when the server can't yet (before 0119 has run).
+  applyHuntCatches(challengeId: string): Promise<number | null>;
 }
