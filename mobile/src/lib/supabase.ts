@@ -1,6 +1,6 @@
 import 'react-native-url-polyfill/auto';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { secureSessionStorage } from './secureSessionStorage';
 
 // Expo inlines EXPO_PUBLIC_* env vars into the JS bundle at build time (see
 // .env.example) — there's no server involved, so this is the same
@@ -24,7 +24,8 @@ export const isSupabaseConfigured = Boolean(url && publishableKey);
 export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(url as string, publishableKey as string, {
       auth: {
-        storage: AsyncStorage,
+        // Keychain / Keystore, not plain AsyncStorage (secureSessionStorage.ts).
+        storage: secureSessionStorage,
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
