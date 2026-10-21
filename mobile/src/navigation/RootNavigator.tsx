@@ -21,6 +21,7 @@ import { OrgDetailScreen } from '../screens/OrgDetailScreen';
 import { HelpScreen } from '../screens/HelpScreen';
 import { AchievementsScreen } from '../screens/AchievementsScreen';
 import { ConnectScreen } from '../screens/ConnectScreen';
+import { TwoStepCodeScreen } from '../screens/auth/TwoStepCodeScreen';
 import { MetricsScreen } from '../screens/MetricsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { GoalsScreen } from '../screens/GoalsScreen';
@@ -73,7 +74,7 @@ const welcomeDoneKey = (userId: string) => `hound:welcome-done:${userId}`;
 type ConnectGate = 'checking' | 'show' | 'hide';
 
 export function RootNavigator() {
-  const { status, initializing, user } = useAuth();
+  const { status, initializing, user, secondStepNeeded } = useAuth();
   const health = useHealthProvider();
   const { colors } = useTheme();
   const [connectGate, setConnectGate] = useState<ConnectGate>('checking');
@@ -154,6 +155,12 @@ export function RootNavigator() {
   // session from AsyncStorage is fast but still async, and briefly
   // showing Welcome before swapping to Main would be worse than a beat of
   // blank screen.
+  // Two-step sign-in is on and this sign-in hasn't had the code yet:
+  // nothing else of Hound shows until it has (auth/twoStep.ts).
+  if (!initializing && status === 'signedIn' && secondStepNeeded) {
+    return <TwoStepCodeScreen />;
+  }
+
   if (initializing || (status === 'signedIn' && connectGate === 'checking')) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>

@@ -7,6 +7,7 @@ import { reportTimeZone } from '../notifications/timeZone';
 import { MisconfiguredScreen } from '../components/MisconfiguredScreen';
 import * as mockAuth from './mockAuth';
 import * as supabaseAuth from './supabaseAuth';
+import { secondStepNeeded as checkSecondStep, verifySecondStep } from './twoStep';
 import type { AuthStatus, AuthUser, SignUpInput } from './types';
 
 // The one place that decides which backend is live. Every function below
@@ -41,6 +42,11 @@ interface AuthContextValue {
   // sign-in/session restore, so this is deliberately narrow rather than
   // a general "patch anything" escape hatch.
   updateUser: (patch: Partial<AuthUser>) => void;
+  // Signed in, but two-step sign-in is on for this account and this
+  // session hasn't had the code yet (twoStep.ts). The app shows only the
+  // code screen until completeSecondStep succeeds.
+  secondStepNeeded: boolean;
+  completeSecondStep: (code: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -52,6 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // immediately (see src/health/HealthContext.tsx for the same shape of
   // "is there something async to resolve before first render" flag).
   const [initializing, setInitializing] = useState(isSupabaseConfigured);
+  const [secondStepNeeded, setSecondStepNeeded] = useState(false);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
@@ -64,7 +71,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .getSession()
       .then(async ({ data }) => {
         if (cancelled) return;
-        if (data.session) setUser(await supabaseAuth.userFromSession(data.session));
+        if (data.session) {
+          // Asked before the loading screen ends, so Hound never flashes
+          // open before the code screen.
+          const [u, needsCode] = await Promise.all([supabaseAuth.userFromSession(data.session), checkSecondStep()]);
+          if (cancelled) return;
+          setSecondStepNeeded(needsCode);
+          setUser(u);
+        }
       })
       .catch(() => {})
       .finally(() => {
@@ -74,12 +88,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Keeps `user` in sync with token refreshes and with signOut() below
     // (which calls supabase.auth.signOut() and lets this listener clear
     // local state, rather than clearing it twice).
+    // Also re-checks two-step sign-in: a fresh sign-in may need the code,
+    // and passing it (MFA_CHALLENGE_VERIFIED) brings a new session that
+    // doesn't.
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
-        supabaseAuth.userFromSession(session).then((u) => {
-          if (!cancelled) setUser(u);
+        Promise.all([supabaseAuth.userFromSession(session), checkSecondStep()]).then(([u, needsCode]) => {
+          if (cancelled) return;
+          setSecondStepNeeded(needsCode);
+          setUser(u);
         });
       } else if (!cancelled) {
+        setSecondStepNeeded(false);
         setUser(null);
       }
     });
@@ -114,20 +134,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Every method re-throws whatever the backend rejects with, so screens
   // can show it directly (`err.message`) — this context adds no error
   // translation of its own.
-  const signInWithGoogle = useCallback(async () => setUser(await backend.signInWithProvider('google')), []);
-  const signInWithFacebook = useCallback(async () => setUser(await backend.signInWithProvider('facebook')), []);
-  const signInWithApple = useCallback(async () => setUser(await backend.signInWithProvider('apple')), []);
-  const signInWithEmail = useCallback(async (email: string, password: string) => {
-    setUser(await backend.signInWithEmail(email, password));
+  // Every sign-in settles whether the code is needed before the app
+  // switches to signed in, so Hound never opens behind the code screen.
+  const signedIn = useCallback(async (u: AuthUser | null) => {
+    setSecondStepNeeded(u ? await checkSecondStep() : false);
+    setUser(u);
   }, []);
-  const signUpWithEmail = useCallback(async (input: SignUpInput) => {
-    setUser(await backend.signUpWithEmail(input));
-  }, []);
+  const signInWithGoogle = useCallback(async () => signedIn(await backend.signInWithProvider('google')), [signedIn]);
+  const signInWithFacebook = useCallback(async () => signedIn(await backend.signInWithProvider('facebook')), [signedIn]);
+  const signInWithApple = useCallback(async () => signedIn(await backend.signInWithProvider('apple')), [signedIn]);
+  const signInWithEmail = useCallback(
+    async (email: string, password: string) => signedIn(await backend.signInWithEmail(email, password)),
+    [signedIn],
+  );
+  const signUpWithEmail = useCallback(async (input: SignUpInput) => signedIn(await backend.signUpWithEmail(input)), [signedIn]);
   const signOut = useCallback(async () => {
     await backend.signOut();
     // Redundant with the onAuthStateChange listener when Supabase is
     // configured, but that's the only backend that has one — mock auth
     // needs this to actually clear state.
+    setSecondStepNeeded(false);
     setUser(null);
   }, []);
   // No setUser here — unlike every sign-in method above, this doesn't
@@ -136,6 +162,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateUser = useCallback((patch: Partial<AuthUser>) => {
     setUser((u) => (u ? { ...u, ...patch } : u));
+  }, []);
+
+  const completeSecondStep = useCallback(async (code: string) => {
+    await verifySecondStep(code);
+    setSecondStepNeeded(await checkSecondStep());
   }, []);
 
   const value = useMemo<AuthContextValue>(
@@ -151,6 +182,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signOut,
       resetPasswordForEmail,
       updateUser,
+      secondStepNeeded,
+      completeSecondStep,
     }),
     [
       user,
@@ -163,6 +196,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signOut,
       resetPasswordForEmail,
       updateUser,
+      secondStepNeeded,
+      completeSecondStep,
     ],
   );
 
