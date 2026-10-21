@@ -31,6 +31,50 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
+// ── Unsubscribe (0122_email_unsubscribe.sql, email-unsubscribe) ─────────
+// The same few lines are in every function that sends email, so each one
+// still deploys on its own from the dashboard. With no
+// EMAIL_UNSUBSCRIBE_SECRET set, emails go out as before, without a link.
+const unsubscribeAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+function b64url(bytes: Uint8Array): string {
+  let s = '';
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// The List-Unsubscribe headers and a footer line for one email.
+async function unsubscribeParts(email: string): Promise<{ headers: Record<string, string>; footer: string }> {
+  const secret = Deno.env.get('EMAIL_UNSUBSCRIBE_SECRET');
+  if (!secret) return { headers: {}, footer: '' };
+  const address = email.trim().toLowerCase();
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [
+    'sign',
+  ]);
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(address)));
+  const query = `e=${b64url(new TextEncoder().encode(address))}&t=${b64url(sig)}`;
+  return {
+    headers: {
+      'List-Unsubscribe': `<${Deno.env.get('SUPABASE_URL')}/functions/v1/email-unsubscribe?${query}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    },
+    footer:
+      `<p style="color:#8a8a8a;font-size:12px">Don't want emails from Hound? ` +
+      `<a href="https://houndchallenge.net/unsubscribe?${query}">Unsubscribe</a>.</p>`,
+  };
+}
+
+// Whether this address asked for no more Hound email. Before 0122 has run
+// the lookup fails and this says no, so nothing changes.
+async function hasUnsubscribed(email: string): Promise<boolean> {
+  const { data } = await unsubscribeAdmin
+    .from('email_unsubscribes')
+    .select('email')
+    .eq('email', email.trim().toLowerCase())
+    .maybeSingle();
+  return !!data;
+}
+
 // Escaping for names people typed themselves, so a name shows up as
 // text in the email, never as a link or an extra subject line. Kept in
 // this file so the function deploys on its own from the dashboard.
@@ -150,6 +194,8 @@ async function sendPushBatch(messages: { to: string; body: string }[]): Promise<
 }
 
 async function sendReminderEmail(resendApiKey: string, name: string, email: string, body: string): Promise<void> {
+  if (await hasUnsubscribed(email)) return;
+  const unsubscribe = await unsubscribeParts(email);
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
@@ -157,10 +203,12 @@ async function sendReminderEmail(resendApiKey: string, name: string, email: stri
       from: 'Hound <reminders@houndchallenge.net>',
       to: [email],
       subject: "Hound hasn't seen you today",
+      headers: unsubscribe.headers,
       html:
         `<p>Hey ${escapeHtml(oneLine(name))},</p>` +
         `<p>${escapeHtml(body)}</p>` +
-        `<p><a href="${HOUND_SIGNUP_URL}">Open Hound</a></p>`,
+        `<p><a href="${HOUND_SIGNUP_URL}">Open Hound</a></p>` +
+        unsubscribe.footer,
     }),
   }).catch(() => {
     // Same reasoning as sendPushBatch — one failed email shouldn't stop

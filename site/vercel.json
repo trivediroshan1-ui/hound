@@ -5,7 +5,8 @@
     { "source": "/whats-new", "destination": "/whats-new.html" },
     { "source": "/privacy", "destination": "/privacy.html" },
     { "source": "/terms", "destination": "/terms.html" },
-    { "source": "/delete-account", "destination": "/delete-account.html" }
+    { "source": "/delete-account", "destination": "/delete-account.html" },
+    { "source": "/unsubscribe", "destination": "/unsubscribe.html" }
   ],
   "redirects": [
     { "source": "/survive-in-woods", "destination": "https://www.surviveinwoods.com/2d", "permanent": true },

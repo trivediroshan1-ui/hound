@@ -21,3 +21,9 @@ verify_jwt = false
 # signature inside the function instead (0114_rewarded_ads.sql).
 [functions.admob-reward]
 verify_jwt = false
+
+# email-unsubscribe is opened from the link in an email, or POSTed by the
+# mail app for one-click unsubscribe, with no Supabase sign-in. It checks
+# the link's own signature instead (EMAIL_UNSUBSCRIBE_SECRET).
+[functions.email-unsubscribe]
+verify_jwt = false
