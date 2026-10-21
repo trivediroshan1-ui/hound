@@ -71,6 +71,9 @@ export function sharedHealthReads(health: HealthProvider, challenges: Challenge[
 // who joined but never opened it individually stayed at 0 forever
 // despite their device logging real steps the whole time.
 export async function syncChallengeProgressFromDevice(challenge: Challenge, health: HealthProvider): Promise<void> {
+  // Sample data isn't real activity (the same rule backgroundSync.ts
+  // follows): it must never reach a challenge's scores.
+  if (health.platform === 'mock') return;
   if (!usesDeviceSteps(challenge) && !usesWorkoutDistance(challenge)) return;
   try {
     // The challenge's calendar days, the same for everyone in their own
@@ -158,6 +161,9 @@ export async function syncChallengeProgressFromDevice(challenge: Challenge, heal
 // (ChallengeDetailScreen's syncFromDevice, HomeScreen's per-active-
 // challenge sync loop).
 export async function syncBingoProgressFromDevice(challenge: Challenge, health: HealthProvider): Promise<void> {
+  // Sample data isn't real activity (the same rule backgroundSync.ts
+  // follows): it must never reach a challenge's scores.
+  if (health.platform === 'mock') return;
   if (challenge.kind !== 'bingo') return;
   try {
     const cardType = challenge.bingoCardType ?? DEFAULT_BINGO_CARD_TYPE;
@@ -214,6 +220,9 @@ export async function syncBingoProgressFromDevice(challenge: Challenge, health: 
 // setSelfReportCheckin (seventyFiveApi.ts) ever writes those columns, so
 // this function's upserts can never clobber them.
 export async function syncSeventyFiveFromDevice(challenge: Challenge, health: HealthProvider): Promise<void> {
+  // Sample data isn't real activity (the same rule backgroundSync.ts
+  // follows): it must never reach a challenge's scores.
+  if (health.platform === 'mock') return;
   if (challenge.kind !== 'seventyfive') return;
   try {
     const days = await getChallengeDays(challenge);
