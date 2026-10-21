@@ -14,6 +14,7 @@
       "infoPlist": {
         "NSHealthShareUsageDescription": "Hound reads your steps, distance, heart rate and weight to score challenges with friends.",
         "NSHealthUpdateUsageDescription": "Hound does not write to Health, but iOS requires this description to be present.",
+        "NSFaceIDUsageDescription": "Hound uses Face ID to unlock the app when you turn on App lock in Settings.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {

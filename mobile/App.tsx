@@ -17,6 +17,7 @@ import { HealthDataProvider } from './src/health/HealthContext';
 import { LabelsProvider } from './src/labels/LabelsContext';
 import { GoalsProvider } from './src/goals/GoalsContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { AppLockGate } from './src/security/AppLockGate';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { applyLatestUpdateOnLaunch } from './src/updates/startupUpdate';
 import { useForegroundUpdateCheck } from './src/updates/updateReady';
@@ -59,7 +60,9 @@ function AppContent() {
                     status bar icons would disappear into it — dark icons only
                     make sense against Dark's own near-black bg. */}
                 <StatusBar style={mode === 'light' ? 'dark' : 'light'} />
-                <RootNavigator />
+                <AppLockGate>
+                  <RootNavigator />
+                </AppLockGate>
               </GoalsProvider>
             </LabelsProvider>
           </HealthDataProvider>
