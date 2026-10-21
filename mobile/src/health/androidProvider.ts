@@ -27,6 +27,14 @@ import { appName, SAMSUNG_HEALTH_PACKAGES, type DataSourcesReport, type DataSour
 // installed on the test device/emulator (Android 14+ ships it in-box;
 // earlier versions install it from Play).
 
+// Health Connect's recording method for a record someone typed in by
+// hand (Metadata.RECORDING_METHOD_MANUAL_ENTRY).
+const RECORDING_METHOD_MANUAL_ENTRY = 3;
+
+function isManualEntry(metadata: unknown): boolean {
+  return !!metadata && (metadata as { recordingMethod?: number }).recordingMethod === RECORDING_METHOD_MANUAL_ENTRY;
+}
+
 const PERMISSIONS = [
   { accessType: 'read' as const, recordType: 'Steps' as const },
   { accessType: 'read' as const, recordType: 'Distance' as const },
@@ -272,6 +280,7 @@ export const androidHealthProvider: HealthProvider = {
       name: exerciseName(r.title, r.exerciseType),
       when: new Date(r.startTime),
       source: 'Health Connect',
+      manual: isManualEntry(r.metadata) ? true : undefined,
       distanceMi: distanceMi > 0 ? Math.round(distanceMi * 10) / 10 : undefined,
       // ExerciseSession carries its own [startTime, endTime] window
       // (unlike distance, there's no separate duration record type to
@@ -326,6 +335,27 @@ export const androidHealthProvider: HealthProvider = {
     } catch {
       // Health Connect missing — nothing to open.
     }
+  },
+
+  async getManualStepsByDay(since: Date): Promise<Map<string, number>> {
+    await ensureInitialized();
+    const filter = { operator: 'between' as const, startTime: dateOnly(since).toISOString(), endTime: new Date().toISOString() };
+    const out = new Map<string, number>();
+    // Raw records, because only a record carries its recording method.
+    // Same paging and ceiling as getDataSources below.
+    let pageToken: string | undefined;
+    for (let page = 0; page < 10; page++) {
+      const result = await readRecords('Steps', { timeRangeFilter: filter, pageSize: 5000, pageToken }).catch(() => null);
+      if (!result) break;
+      for (const r of result.records) {
+        if (!isManualEntry(r.metadata)) continue;
+        const key = dateKey(new Date(r.startTime));
+        out.set(key, (out.get(key) ?? 0) + (r.count ?? 0));
+      }
+      pageToken = result.pageToken || undefined;
+      if (!pageToken) break;
+    }
+    return out;
   },
 
   // Who wrote what, from the raw records (readRecords doesn't merge

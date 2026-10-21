@@ -259,6 +259,7 @@ export const iosHealthProvider: HealthProvider = {
           // than defaulting to a guess; deviceSync.ts's name heuristic is
           // the fallback for that case.
           isOutdoor: w.metadata.HKIndoorWorkout == null ? undefined : !w.metadata.HKIndoorWorkout,
+          manual: wasUserEntered(w.metadata) ? true : undefined,
           avgHeartRate: undefined,
           // w.duration is HKWorkout's own duration Quantity, always in
           // seconds (NSTimeInterval) — no unit param to request like the
@@ -302,6 +303,27 @@ export const iosHealthProvider: HealthProvider = {
     }
   },
 
+  async getManualStepsByDay(since: Date): Promise<Map<string, number>> {
+    // Raw samples, because only a sample carries HKWasUserEntered; the
+    // day totals above can't tell who wrote what.
+    const samples = await orDefault(
+      queryQuantitySamples('HKQuantityTypeIdentifierStepCount', {
+        limit: 0,
+        ascending: true,
+        unit: 'count',
+        filter: { date: { startDate: startOfDay(since), endDate: new Date() } },
+      }),
+      [],
+    );
+    const out = new Map<string, number>();
+    for (const s of samples) {
+      if (!wasUserEntered(s.metadata)) continue;
+      const key = dateKey(s.startDate);
+      out.set(key, (out.get(key) ?? 0) + s.quantity);
+    }
+    return out;
+  },
+
   async getStepsSince(since: Date): Promise<number> {
     // Same collection query as the day totals above, just anchored at
     // `since` instead of midnight, so a step sample straddling `since`
@@ -312,6 +334,11 @@ export const iosHealthProvider: HealthProvider = {
     return Math.round(sum);
   },
 };
+
+// HealthKit's own flag for a sample or workout someone typed in by hand.
+function wasUserEntered(metadata: unknown): boolean {
+  return !!metadata && (metadata as Record<string, unknown>).HKWasUserEntered === true;
+}
 
 function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

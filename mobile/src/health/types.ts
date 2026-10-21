@@ -42,6 +42,11 @@ export interface WorkoutSample {
   // actually carries it — plenty of older or manually-logged workouts
   // don't, so undefined is still the common case there too.
   isOutdoor?: boolean;
+  // Typed in by hand in the Health app rather than recorded by a phone
+  // or watch: HKWasUserEntered on iPhone, recording method "manual entry"
+  // in Health Connect. Left out of challenges when the fair play switch
+  // is on (challenges/fairPlay.ts). Undefined when the platform can't say.
+  manual?: boolean;
   avgHeartRate?: number;
   // Minutes, not a Quantity/unit pair like the platforms' own duration
   // fields — src/health/readiness.ts (training-load calculation) is the
@@ -84,6 +89,10 @@ export interface HealthProvider {
   // Total steps from an exact moment (not a day boundary) until now —
   // Tic-Tac-Go's step goals count only steps taken since your turn began.
   getStepsSince(since: Date): Promise<number>;
+  // Steps typed in by hand, per local day ("YYYY-MM-DD"), from `since`
+  // to now. Only real providers have it; challenges subtract these when
+  // the fair play switch is on (challenges/fairPlay.ts).
+  getManualStepsByDay?(since: Date): Promise<Map<string, number>>;
   // Whether health data can be read right now. Every read above returns
   // nothing instead of failing, which looks like 0 steps, so background
   // sync asks first: a locked iPhone can't read Apple Health, and Android

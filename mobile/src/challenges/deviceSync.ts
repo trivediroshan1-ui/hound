@@ -8,6 +8,7 @@ import { listGoals } from '../goals/goalsApi';
 import { signedInUserId } from '../lib/supabase';
 import { recordSeventyFiveWorkouts } from './seventyFiveApi';
 import { getChallengeDays, localDayKey as dateKey, workoutCounts } from './challengeDays';
+import { getFairPlayRules } from './fairPlay';
 import type { Challenge } from './types';
 import type { DailyStepsWithDate, HealthProvider, WorkoutSample } from '../health/types';
 
@@ -46,7 +47,36 @@ export function sharedHealthReads(health: HealthProvider, challenges: Challenge[
       : health.getDailyStepsSince(from);
   shared.getRecentWorkouts = (limit: number) =>
     limit <= 200 ? (workouts ??= health.getRecentWorkouts(200)).then((w) => w.slice(0, limit)) : health.getRecentWorkouts(limit);
+  // Hand-typed steps (fair play switch) are read once too, the same way.
+  const readManual = health.getManualStepsByDay?.bind(health);
+  if (readManual) {
+    let manual: Promise<Map<string, number>> | null = null;
+    shared.getManualStepsByDay = (from: Date) =>
+      from.getTime() >= since.getTime() ? (manual ??= readManual(since)) : readManual(from);
+  }
   return shared;
+}
+
+// What counts in a challenge under the fair play switch (fairPlay.ts,
+// 0123): with it on, steps and workouts typed in by hand are left out.
+// With it off, or on a provider that can't tell, everything counts as
+// before.
+async function countableWorkouts(health: HealthProvider, limit: number): Promise<WorkoutSample[]> {
+  const [workouts, rules] = await Promise.all([health.getRecentWorkouts(limit), getFairPlayRules()]);
+  return rules.excludeManualEntries ? workouts.filter((w) => !w.manual) : workouts;
+}
+
+async function countableDailySteps(health: HealthProvider, since: Date): Promise<DailyStepsWithDate[]> {
+  const [daily, rules] = await Promise.all([health.getDailyStepsSince(since), getFairPlayRules()]);
+  if (!rules.excludeManualEntries || !health.getManualStepsByDay) return daily;
+  const manual = await health.getManualStepsByDay(since).catch(() => new Map<string, number>());
+  if (manual.size === 0) return daily;
+  // A day's total can already leave out part of a hand-typed entry that
+  // overlapped a watch's own steps, so never go below zero.
+  return daily.map((d) => {
+    const typed = manual.get(d.date);
+    return typed ? { ...d, steps: Math.max(0, d.steps - Math.round(typed)) } : d;
+  });
 }
 
 // Backfills one challenge's entire progress from real device history —
@@ -90,7 +120,7 @@ export async function syncChallengeProgressFromDevice(challenge: Challenge, heal
       // Enough of a lookback to plausibly cover the whole challenge —
       // getRecentWorkouts() takes a count, not a date range, so this
       // over-fetches slightly and filters client-side instead.
-      const workouts = await health.getRecentWorkouts(200);
+      const workouts = await countableWorkouts(health, 200);
       // By calendar day, plus — for a challenge started "Now" — the exact
       // moment on the first day, since a workout carries its own start
       // time (see workoutCounts).
@@ -133,7 +163,7 @@ export async function syncChallengeProgressFromDevice(challenge: Challenge, heal
       // "recorded a zero" — except today, which always gets a row so
       // the screen doesn't look unsynced before you've taken a step.
       const [sy, sm, sd] = startDayKey.split('-').map(Number);
-      const daily = (await health.getDailyStepsSince(new Date(sy, sm - 1, sd))).filter(
+      const daily = (await countableDailySteps(health, new Date(sy, sm - 1, sd))).filter(
         (d) =>
           d.date >= startDayKey &&
           d.date <= endCap &&
@@ -167,7 +197,7 @@ export async function syncBingoProgressFromDevice(challenge: Challenge, health: 
   try {
     const cardType = challenge.bingoCardType ?? DEFAULT_BINGO_CARD_TYPE;
     const days = await getChallengeDays(challenge);
-    const workouts = await health.getRecentWorkouts(200);
+    const workouts = await countableWorkouts(health, 200);
     const inRange = workouts.filter((w) => workoutCounts(days, w.when));
     // First match per category wins — which specific workout gets
     // credited only matters for the "linked to <name>" caption a filled
@@ -217,8 +247,8 @@ async function syncHoundBingo(challenge: Challenge, health: HealthProvider): Pro
     const [card, rows, daily, workouts, goals] = await Promise.all([
       getMyBingoCard(challenge.id),
       listBingoProgress(challenge.id),
-      health.getDailyStepsSince(new Date(y, m - 1, d)),
-      health.getRecentWorkouts(200),
+      countableDailySteps(health, new Date(y, m - 1, d)),
+      countableWorkouts(health, 200),
       listGoals(userId).catch(() => []),
     ]);
     const inRange = workouts.filter((w) => workoutCounts(days, w.when));
@@ -279,7 +309,7 @@ export async function syncSeventyFiveFromDevice(challenge: Challenge, health: He
     // nothing to record yet.
     if (todayKey < days.firstDay) return;
 
-    const workouts = await health.getRecentWorkouts(200);
+    const workouts = await countableWorkouts(health, 200);
     const inRange = workouts.filter((w) => workoutCounts(days, w.when));
 
     const byDay = new Map<string, WorkoutSample[]>();
